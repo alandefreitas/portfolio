@@ -73,4 +73,11 @@ namespace portfolio {
     data_feed_result::data_feed_result(const data_feed_result &rhs) {
         this->historical_data_ = rhs.historical_data_;
     }
+
+    minute_point data_feed_result::start_point() const {
+        return historical_data_.begin()->first.first;
+    }
+    minute_point data_feed_result::end_point() const {
+        return historical_data_.rbegin()->first.second;
+    }
 } // namespace portfolio

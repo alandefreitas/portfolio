@@ -4,33 +4,80 @@
 
 #include "portfolio.h"
 #include "portfolio/common/algorithm.h"
+#include <iostream>
 #include <random>
 #include <range/v3/core.hpp>
 #include <range/v3/numeric/accumulate.hpp>
-
+#include <vector>
 namespace portfolio {
 
     bool portfolio::invariants() const {
-        double total = total_allocation();
-        return almost_equal(total, 1.0);
+        size_t k = 0;
+        bool in_bounds = true;
+        for (auto &[key, value] : this->assets_proportions_) {
+            if (!almost_equal(value, 0.0)) {
+                k++;
+                if (value < this->lower_bound_ || value > this->upper_bound_) {
+                    in_bounds = false;
+                }
+            }
+        }
+        return almost_equal(this->total_allocation(), 1.0) && this->k_ == k &&
+               in_bounds;
     }
-    portfolio::portfolio(const market_data &data) {
+    portfolio::portfolio(const market_data &data)
+        : lower_bound_(0.08), upper_bound_(0.15), k_(10) {
         static std::default_random_engine generator =
             std::default_random_engine(
                 std::chrono::system_clock::now().time_since_epoch().count());
-        std::uniform_real_distribution<double> d_real(0.0, 1.0);
-        std::binomial_distribution<int> d_binomial(1, 0.5);
+        std::uniform_real_distribution<double> d_real(lower_bound_,
+                                                      upper_bound_);
+        std::uniform_int_distribution<int> d_int(1, int(data.size()));
+        std::vector<std::string> selected_assets;
+        int aux = 0;
         for (auto a = data.assets_map_begin(); a != data.assets_map_end();
              ++a) {
-            if (1 == d_binomial(generator)) { // asset is selected or not
-                assets_proportions_[a->first] = d_real(generator);
-            } else {
-                assets_proportions_[a->first] = 0.0;
+            this->assets_proportions_[a->first] = 0.0;
+        }
+        while (selected_assets.size() < k_) {
+            for (auto a = data.assets_map_begin(); a != data.assets_map_end();
+                 ++a) {
+                if (d_int(generator) <=
+                    data.size() / k_) { // asset is selected or not
+                    if (std::find(selected_assets.begin(),
+                                  selected_assets.end(),
+                                  a->first) == selected_assets.end()) {
+                        assets_proportions_[a->first] = d_real(generator);
+                        selected_assets.push_back(a->first);
+                        if (selected_assets.size() == k_) {
+                            break;
+                        }
+                    }
+                } else {
+                    if (aux == 0) {
+                        assets_proportions_[a->first] = 0.0;
+                    }
+                }
+            }
+            if (selected_assets.size() < k_) {
+                aux++;
             }
         }
         normalize_allocation();
     }
     void portfolio::normalize_allocation() {
+        for (auto &[key, value] : assets_proportions_) {
+            if (!almost_equal(value, 0.0)) {
+                while (value < lower_bound_ || value > upper_bound_) {
+                    if (value < lower_bound_) {
+                        value = value + 2 * (lower_bound_ - value);
+                    } else if (value > upper_bound_) {
+                        value = value - 2 * (value - upper_bound_);
+                    }
+                }
+                assets_proportions_[key] = value;
+            }
+        }
         double total = total_allocation();
         if (almost_equal(total, 1.0, 5)) {
             return;
@@ -42,12 +89,14 @@ namespace portfolio {
                     p.second = p.second / total;
                     return p;
                 });
-            return;
         } else {
-            for (auto &[key, value] : assets_proportions_)
-                assets_proportions_[key] = value / total;
-            return;
+            for (auto &[key, value] : assets_proportions_) {
+                if (!almost_equal(value, 0.0)) {
+                    assets_proportions_[key] = value / total;
+                }
+            }
         }
+        normalize_allocation();
     }
     double portfolio::total_allocation() const {
         double total;
@@ -59,17 +108,15 @@ namespace portfolio {
             });
         return total;
     }
-    std::pair<double, double> portfolio::evaluate_mad(const market_data &data,
-                                                      interval_points interval,
-                                                      int n_periods) {
+    std::pair<double, double> portfolio::evaluate_mad(const market_data &data) {
         if (mad_) {
-            if (mad_->n_periods() != n_periods ||
-                mad_->interval() != interval) {
+            if (mad_->n_periods() != data.n_periods() ||
+                mad_->interval() != data.interval()) {
                 mad_.reset();
-                mad_.emplace(data, interval, n_periods);
+                mad_.emplace(data);
             }
         } else {
-            mad_.emplace(data, interval, n_periods);
+            mad_.emplace(data);
         }
         double total_risk = 0.0;
         double total_return = 0.0;
@@ -93,5 +140,60 @@ namespace portfolio {
             }
         }
         return os;
+    }
+    void portfolio::mutation(market_data &p, double mutation_strength) {
+        static std::default_random_engine generator =
+            std::default_random_engine(
+                std::chrono::system_clock::now().time_since_epoch().count());
+        std::normal_distribution<double> d(0, mutation_strength);
+        for (auto &[key, value] : assets_proportions_) {
+            if (!almost_equal(value, 0.0)) {
+                this->assets_proportions_[key] = value + d(generator);
+            }
+        }
+        this->normalize_allocation();
+    }
+    portfolio portfolio::crossover(const market_data &data, portfolio &rhs) {
+        static std::default_random_engine generator =
+            std::default_random_engine(
+                std::chrono::system_clock::now().time_since_epoch().count());
+        portfolio child(data);
+        std::vector<std::string> assets_this;
+        std::vector<std::string> assets_rhs;
+        std::vector<std::string> assets_total;
+        std::vector<std::string> chosen_assets;
+        for (auto &[key, value] : this->assets_proportions_) {
+            if (!almost_equal(value, 0.0)) {
+                assets_this.push_back(key);
+            }
+            if (!almost_equal(rhs.assets_proportions_[key], 0.0)) {
+                assets_rhs.push_back(key);
+            }
+            child.assets_proportions_[key] = 0.0;
+        }
+        std::set_union(assets_this.begin(), assets_this.end(),
+                       assets_rhs.begin(), assets_rhs.end(),
+                       std::back_inserter(assets_total));
+        std::sample(assets_total.begin(), assets_total.end(),
+                    std::back_inserter(chosen_assets), k_,
+                    std::mt19937{std::random_device{}()});
+        for (auto &a : chosen_assets) {
+            child.assets_proportions_[a] =
+                this->assets_proportions_.at(a) + rhs.assets_proportions_.at(a);
+        }
+        child.normalize_allocation();
+        return child;
+    }
+    double portfolio::distance(market_data &data, portfolio &rhs,
+                               double max_dist) {
+        double total = 0.0;
+        for (auto &[key, _] : assets_proportions_) {
+            total += std::abs(rhs.assets_proportions_.at(key) -
+                              assets_proportions_.at(key));
+            if (total > max_dist) {
+                return total;
+            }
+        }
+        return total;
     }
 } // namespace portfolio

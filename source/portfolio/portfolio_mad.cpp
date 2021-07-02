@@ -10,24 +10,26 @@
 #include <range/v3/core.hpp>
 #include <range/v3/numeric/accumulate.hpp>
 namespace portfolio {
-    portfolio_mad::portfolio_mad(const market_data &data,
-                                 interval_points interval, int n_periods)
-        : interval_(std::move(interval)) {
-        n_periods_ = n_periods;
+    portfolio_mad::portfolio_mad(const market_data &data) {
+        this->interval_= data.interval();
+        this->n_periods_= data.n_periods();
         for (auto a = data.assets_map_begin(); a != data.assets_map_end();
              ++a) {
             data_feed_result df = a->second;
             auto price_it = df.find_prices_from(interval_);
             if (price_it == df.end()) {
-                throw std::runtime_error(
-                    "MAD_PORTFOLIO constructor error: interval not found.");
+                throw std::runtime_error("MAD_PORTFOLIO constructor error: "
+                                         "interval not found for asset " +
+                                         a->first);
             }
             for (size_t i = 0; i < n_periods_; ++i) {
                 if (price_it != df.begin())
                     price_it--;
                 else
-                    throw std::runtime_error("MAD_PORTFOLIO constructor error: "
-                                             "n_periods out of market_data.");
+                    throw std::runtime_error(
+                        "MAD_PORTFOLIO constructor error: "
+                        "n_periods out of market_data for asset: " +
+                        a->first);
             }
             std::vector<double> asset_returns;
             for (size_t i = 0; i < n_periods_; ++i) {

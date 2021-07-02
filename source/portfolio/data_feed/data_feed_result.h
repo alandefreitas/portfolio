@@ -58,6 +58,10 @@ namespace portfolio {
         /// otherwise.
         bool empty();
 
+        minute_point start_point() const;
+
+        minute_point end_point() const;
+
       private:
         price_map historical_data_;
     };

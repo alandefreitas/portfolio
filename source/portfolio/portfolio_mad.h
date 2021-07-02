@@ -15,8 +15,7 @@ namespace portfolio {
         /// \param interval Interval of the last price record for which you want
         /// to calculate the MAD. \param n_periods Number of periods used for
         /// calculating MAD.
-        portfolio_mad(const market_data &data, interval_points interval,
-                      int n_periods);
+        portfolio_mad(const market_data &data);
 
         /// @brief Gets interval used for calculating MAD.
         /// \return Interval_points of portfolio_mad.

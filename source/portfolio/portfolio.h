@@ -17,21 +17,26 @@ namespace portfolio {
         explicit portfolio(const market_data &data);
         /// @brief Evaluate portfolio using MAD as risk measure.
         /// \param data Market data of assets.
-        /// \param interval Time interval for which you want to calculate MAD.
-        /// \param n_periods Number of time periods used for calculating MAD.
         /// \return Risk and expected return of the portfolio.
-        std::pair<double, double> evaluate_mad(const market_data &data,
-                                               interval_points interval,
-                                               int n_periods);
+        std::pair<double, double> evaluate_mad(const market_data &data);
         friend std::ostream &operator<<(std::ostream &os,
                                         const portfolio &portfolio1);
+
+        void mutation(market_data &p, double mutation_strength);
+        portfolio crossover(const market_data &data, portfolio &rhs);
+        double distance(market_data &data, portfolio &rhs,
+                        double max_dist = std::numeric_limits<double>::max());
+        [[nodiscard]] bool invariants() const;
 
       private:
         void normalize_allocation();
         [[nodiscard]] double total_allocation() const;
-        [[nodiscard]] bool invariants() const;
+
         std::optional<portfolio_mad> mad_;
         std::map<std::string, double> assets_proportions_;
+        double lower_bound_;
+        double upper_bound_;
+        size_t k_;
     };
 } // namespace portfolio
 #endif // PORTFOLIO_PORTFOLIO_H
